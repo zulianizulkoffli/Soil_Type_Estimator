@@ -16,7 +16,7 @@ import joblib
 import streamlit as st
 
 # Add an image at the top of the app
-st.image(r'C:\Users\zzulk\Downloads\Soil_Type_Predictor-main\Soil_Type_Predictor-main\land.jpg', caption='', use_column_width=True)  # Replace 'header_image.jpg' with your image file name or URL
+st.image('https://raw.githubusercontent.com/zulianizulkoffli/Soil_Type_Estimator/main/land.jpg', caption='', use_column_width=True) # Replace 'header_image.jpg' with your image file name or URL
 
 # Load the data
 data = pd.read_csv('ML_Analysis_Soil_Type_1.csv')  # Ensure the CSV is in the same directory
