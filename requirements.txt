@@ -1,5 +1,10 @@
-pandas
-scikit-learn
-joblib
-streamlit
-numpy
+streamlit==1.43.2
+pandas==2.2.3
+scikit-learn==1.6.1
+numpy==2.2.3
+scipy==1.15.2
+joblib==1.4.2
+altair==5.5.0
+pillow==11.1.0
+pyarrow==19.0.1
+protobuf==5.29.3
