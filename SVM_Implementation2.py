@@ -6,241 +6,135 @@ Created on Wed Jul 10 13:14:46 2024
 """
 
 import pandas as pd
-import streamlit as st
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.neural_network import MLPClassifier
 from sklearn.metrics import accuracy_score
+import numpy as np
+import joblib
+import streamlit as st
 
-# =========================
-# PAGE CONFIG
-# =========================
-st.set_page_config(
-    page_title="Soil Type Predictor",
-    layout="wide"
-)
+# Add an image at the top of the app
+st.image('https://raw.githubusercontent.com/zulianizulkoffli/Soil_Type_Estimator/main/land.jpg', caption='', use_column_width=True) # Replace 'header_image.jpg' with your image file name or URL
 
-# =========================
-# HEADER IMAGE
-# =========================
-st.image(
-    "https://raw.githubusercontent.com/zulianizulkoffli/Soil_Type_Estimator/main/land.jpg",
-    caption="",
-    use_container_width=True
-)
+# Load the data
+data = pd.read_csv('ML_Analysis_Soil_Type_1.csv')  # Ensure the CSV is in the same directory
 
-# =========================
-# CONFIG
-# =========================
-DATA_FILE = "ML_Analysis_Soil_Type_1.csv"
+# Replace zeros with ones where appropriate
+data.replace(0, 1, inplace=True)
 
-EXPECTED_FEATURES = [
-    'TOC',
-    'Field conductivity',
-    'Lab conductivity',
-    'Field resistivity (?)',
-    'Lab. Resistivity (?a)',
-    'Depth (m)',
-    'Clay (%)',
-    'Silt (%)',
-    'Gravels (%)',
-    'D10',
-    'D30',
-    'D60',
-    'CU',
-    'CC',
-    '1D inverted resistivity',
-    'Lab. Resistivity (Oa)',
-    'Moisture content (%)',
-    'pH',
-    'Fine Soil (%)',
-    'Sand (%)'
-]
+# Drop columns that are completely empty or unnecessary
+data.dropna(axis=1, how='all', inplace=True)
 
-crop_recommendations = {
-    "Inorganic Clay": ["Paddy", "Cabbage", "Sengkuang"],
-    "Inorganic Silt": ["French Bean", "Cauliflower", "Radish"],
-    "Poorly Graded Sand": ["Rubber", "Cashew"],
-    "Clayey Sand": ["Chilli", "Luffa", "Bitter Gourd", "Long Bean", "Cabbage", "Rubber"],
-    "Sandy": ["Tomato", "Chilli", "Green Pepper", "Brinjal", "Okra", "Cucumber", "Coconut", "Tobacco", "Palm Oil", "Rubber"],
-    "Well-graded Sand": ["Tomato", "Chilli", "Green Pepper", "Brinjal", "Okra", "Cucumber", "Luffa", "Bitter Gourd", "Coconut", "Palm Oil", "Rubber"],
+# Drop rows with any NaN values
+data = data.dropna()
+
+# Define the features and target
+features = ['TOC', 'Field conductivity', 'Lab conductivity', 'Field resistivity (?)',
+            'Lab. Resistivity (?a)', 'Depth (m)', 'Clay (%)', 'Silt (%)', 'Gravels (%)', 
+            'D10', 'D30', 'D60', 'CU', 'CC', '1D inverted resistivity', 'Lab. Resistivity (Oa)', 
+            'Moisture content (%)', 'pH', 'Fine Soil (%)', 'Sand (%)']
+
+# Ensure all specified features are present in the data
+features = [f for f in features if f in data.columns]
+
+# Split the dataset into features (X) and target (y)
+X = data[features]
+y = data['Soil_Type']
+
+# Scale the features
+scaler = StandardScaler()
+X = scaler.fit_transform(X)
+
+# Split the data into training and testing sets
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Train Gradient Boosting model
+gb_clf = GradientBoostingClassifier(n_estimators=100, random_state=42)
+gb_clf.fit(X_train, y_train)
+gb_accuracy = accuracy_score(y_test, gb_clf.predict(X_test))
+
+# Train Neural Network model
+nn_clf = MLPClassifier(hidden_layer_sizes=(100,), max_iter=300, random_state=42)
+nn_clf.fit(X_train, y_train)
+nn_accuracy = accuracy_score(y_test, nn_clf.predict(X_test))
+
+# Save the models and scaler
+joblib.dump(gb_clf, 'gradient_boosting_model.pkl')
+joblib.dump(nn_clf, 'neural_network_model.pkl')
+joblib.dump(scaler, 'scaler.pkl')
+
+# Dictionary to map predicted class to soil type
+soil_type_mapping = {
+    1: "Inorganic Clay",
+    2: "Inorganic Silt",
+    3: "Poorly Graded Sand",
+    4: "Clayey Sand",
+    5: "Sandy",
+    6: "Well-graded Sand"
 }
 
-# =========================
-# LOAD DATA
-# =========================
-@st.cache_data
-def load_data():
-    df = pd.read_csv(DATA_FILE)
+# Dictionary to map soil type to best crops
+crop_recommendations = {
+    "Inorganic Clay": ["Paddy", "Cabbage", "Sengkuang"],  # Reference: Joseph et al., 1974; MARDI Research Station, Jalan Kebun (Siti Doya, pers. comm.)
+    "Inorganic Silt": ["French Bean", "Cauliflower", "Radish"],  # Reference: Joseph et al., 1974
+    "Poorly Graded Sand": ["Rubber", "Cashew"],  # Reference: Chai, 1981; Khairuddin & Kamaruddin, 1980
+    "Clayey Sand": ["Chilli", "Luffa", "Bitter Gourd", "Long Bean", "Cabbage", "Rubber"],  # Reference: Joseph et al., 1974
+    "Sandy": ["Tomato", "Chilli", "Green Pepper", "Brinjal", "Okra", "Cucumber", "Coconut", "Tobacco", "Palm Oil", "Rubber"],  # Reference: Kho et al., 1979; Zainuddin, 1981
+    "Well-graded Sand": ["Tomato", "Chilli", "Green Pepper", "Brinjal", "Okra", "Cucumber", "Luffa", "Bitter Gourd", "Coconut", "Palm Oil", "Rubber"],  # Reference: Kho et al., 1979; Zainuddin, 1981
+}
 
-    # Drop fully empty columns
-    df.dropna(axis=1, how='all', inplace=True)
+# Function to load the model and scaler and make predictions based on user inputs
+def predict_soil_type(input_features, model_choice):
+    # Load the scaler
+    scaler = joblib.load('scaler.pkl')
 
-    # Keep only rows without missing values
-    df.dropna(inplace=True)
+    # Convert input_features to DataFrame to ensure correct format
+    input_features_df = pd.DataFrame([input_features])
+    
+    # Scale the input features
+    input_features_scaled = scaler.transform(input_features_df)
+    
+    # Load the chosen model
+    if model_choice == 'Gradient Boosting':
+        clf = joblib.load('gradient_boosting_model.pkl')
+        accuracy = gb_accuracy
+    elif model_choice == 'Neural Network':
+        clf = joblib.load('neural_network_model.pkl')
+        accuracy = nn_accuracy
+    
+    # Make predictions
+    prediction = clf.predict(input_features_scaled)
+    
+    # Map prediction to soil type
+    predicted_soil_type = soil_type_mapping.get(prediction[0], "unrecognized")
+    
+    return predicted_soil_type, accuracy
 
-    return df
+# Streamlit UI for user input
+st.title("Soil Type Predictor Based On It's Features In Peninsular Malaysia")
 
-# =========================
-# TRAIN MODELS ONCE ONLY
-# =========================
-@st.cache_resource
-def train_models():
-    df = load_data()
+# Model choice
+model_choice = st.selectbox("Choose the prediction model:", ["Gradient Boosting", "Neural Network"])
 
-    if "Soil_Type" not in df.columns:
-        raise ValueError("Column 'Soil_Type' not found in dataset.")
+user_inputs = {}
+for feature in features:
+    value = float(data[feature].iloc[0])
+    min_value = float(data[feature].min())
+    max_value = float(data[feature].max())
+    user_inputs[feature] = st.slider(f"{feature} (e.g., {value})", min_value=min_value, max_value=max_value, value=value, key=feature)
 
-    features = [f for f in EXPECTED_FEATURES if f in df.columns]
+# Display crop recommendations with larger and bold font using Markdown
+if st.button("Predict"):
+    predicted_soil_type, accuracy = predict_soil_type(user_inputs, model_choice)
+    st.write(f"The predicted soil type is: {predicted_soil_type}")
+    st.write(f"Model Accuracy: {accuracy:.2f}")
 
-    if not features:
-        raise ValueError("None of the expected feature columns were found in dataset.")
-
-    X = df[features].copy()
-    y = df["Soil_Type"].copy()
-
-    # Convert feature columns to numeric safely
-    for col in features:
-        X[col] = pd.to_numeric(X[col], errors="coerce")
-
-    # Drop rows with invalid numeric values
-    valid_idx = X.dropna().index
-    X = X.loc[valid_idx]
-    y = y.loc[valid_idx]
-
-    # Encode target labels
-    label_encoder = LabelEncoder()
-    y_encoded = label_encoder.fit_transform(y)
-
-    # Scale features
-    scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X)
-
-    # Train-test split
-    X_train, X_test, y_train, y_test = train_test_split(
-        X_scaled,
-        y_encoded,
-        test_size=0.2,
-        random_state=42,
-        stratify=y_encoded
-    )
-
-    # Gradient Boosting
-    gb_clf = GradientBoostingClassifier(n_estimators=100, random_state=42)
-    gb_clf.fit(X_train, y_train)
-    gb_pred = gb_clf.predict(X_test)
-    gb_accuracy = accuracy_score(y_test, gb_pred)
-
-    # Neural Network
-    nn_clf = MLPClassifier(hidden_layer_sizes=(100,), max_iter=500, random_state=42)
-    nn_clf.fit(X_train, y_train)
-    nn_pred = nn_clf.predict(X_test)
-    nn_accuracy = accuracy_score(y_test, nn_pred)
-
-    return {
-        "gb_model": gb_clf,
-        "nn_model": nn_clf,
-        "scaler": scaler,
-        "label_encoder": label_encoder,
-        "features": features,
-        "data": df,
-        "gb_accuracy": gb_accuracy,
-        "nn_accuracy": nn_accuracy
-    }
-
-# =========================
-# PREDICTION FUNCTION
-# =========================
-def predict_soil_type(input_features, model_choice, scaler, label_encoder, features, gb_model, nn_model):
-    input_df = pd.DataFrame([input_features])[features]
-    input_scaled = scaler.transform(input_df)
-
-    if model_choice == "Gradient Boosting":
-        prediction_encoded = gb_model.predict(input_scaled)[0]
+    if predicted_soil_type in crop_recommendations:
+        # Display the recommendations in bold and larger font using Markdown
+        recommended_crops = ', '.join(crop_recommendations[predicted_soil_type])
+        st.markdown(f"<span style='font-size: 1em;'>Suggested crops for {predicted_soil_type}: {recommended_crops}</span>", unsafe_allow_html=True)
     else:
-        prediction_encoded = nn_model.predict(input_scaled)[0]
+        st.write("No crop recommendations available for this soil type.")
 
-    predicted_label = label_encoder.inverse_transform([prediction_encoded])[0]
-    return predicted_label
-
-# =========================
-# UI
-# =========================
-st.title("Soil Type Predictor Based On Its Features in Peninsular Malaysia")
-
-try:
-    model_artifacts = train_models()
-
-    gb_model = model_artifacts["gb_model"]
-    nn_model = model_artifacts["nn_model"]
-    scaler = model_artifacts["scaler"]
-    label_encoder = model_artifacts["label_encoder"]
-    features = model_artifacts["features"]
-    data = model_artifacts["data"]
-    gb_accuracy = model_artifacts["gb_accuracy"]
-    nn_accuracy = model_artifacts["nn_accuracy"]
-
-    st.success("Models loaded successfully.")
-
-    model_choice = st.selectbox(
-        "Choose the prediction model:",
-        ["Gradient Boosting", "Neural Network"]
-    )
-
-    user_inputs = {}
-
-    for feature in features:
-        col_data = pd.to_numeric(data[feature], errors="coerce").dropna()
-
-        min_value = float(col_data.min())
-        max_value = float(col_data.max())
-        default_value = float(col_data.iloc[0])
-
-        if min_value == max_value:
-            user_inputs[feature] = st.number_input(
-                f"{feature}",
-                value=default_value,
-                key=feature
-            )
-        else:
-            user_inputs[feature] = st.slider(
-                f"{feature} (e.g., {default_value})",
-                min_value=min_value,
-                max_value=max_value,
-                value=default_value,
-                key=feature
-            )
-
-    if st.button("Predict"):
-        predicted_soil_type = predict_soil_type(
-            input_features=user_inputs,
-            model_choice=model_choice,
-            scaler=scaler,
-            label_encoder=label_encoder,
-            features=features,
-            gb_model=gb_model,
-            nn_model=nn_model
-        )
-
-        if model_choice == "Gradient Boosting":
-            accuracy = gb_accuracy
-        else:
-            accuracy = nn_accuracy
-
-        st.subheader("Prediction Result")
-        st.write(f"**Predicted soil type:** {predicted_soil_type}")
-        st.write(f"**Model accuracy:** {accuracy:.2%}")
-
-        if predicted_soil_type in crop_recommendations:
-            recommended_crops = ", ".join(crop_recommendations[predicted_soil_type])
-            st.markdown(
-                f"**Suggested crops for {predicted_soil_type}:** {recommended_crops}"
-            )
-        else:
-            st.write("No crop recommendations available for this soil type.")
-
-except FileNotFoundError:
-    st.error(f"Data file '{DATA_FILE}' not found. Make sure it is in the same folder as app.py.")
-except Exception as e:
-    st.error(f"App error: {e}")
