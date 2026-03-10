@@ -6,81 +6,42 @@ Created on Wed Jul 10 13:14:46 2024
 """
 
 import pandas as pd
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import classification_report, accuracy_score
-import numpy as np
-import joblib
 import streamlit as st
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score
 
-# Load the data
-data = pd.read_csv('ML_Analysis_Soil_Type_1.csv')  # Ensure the CSV is in the same directory
+st.set_page_config(page_title="Soil Type Predictor", layout="wide")
 
-# Replace zeros with ones where appropriate
-data.replace(0, 1, inplace=True)
+# =========================
+# CONFIG
+# =========================
+DATA_FILE = "ML_Analysis_Soil_Type_1.csv"
 
-# Drop columns that are completely empty or unnecessary
-data.dropna(axis=1, how='all', inplace=True)
+EXPECTED_FEATURES = [
+    'TOC',
+    'Field conductivity',
+    'Lab conductivity',
+    'Field resistivity (?)',
+    'Lab. Resistivity (?a)',
+    'Depth (m)',
+    'Clay (%)',
+    'Silt (%)',
+    'Gravels (%)',
+    'D10',
+    'D30',
+    'D60',
+    'CU',
+    'CC',
+    '1D inverted resistivity',
+    'Lab. Resistivity (Oa)',
+    'Moisture content (%)',
+    'pH',
+    'Fine Soil (%)',
+    'Sand (%)'
+]
 
-# Drop rows with any NaN values
-data = data.dropna()
-
-# # Display the first few rows of the dataset
-# st.write("First few rows of the dataset:")
-# st.write(data.head())
-
-# Define the features and target
-features = ['TOC', 'Field conductivity', 'Lab conductivity', 'Field resistivity (?)',
-            'Lab. Resistivity (?a)', 'Depth (m)', 'Clay (%)', 'Silt (%)', 'Gravels (%)', 
-            'D10', 'D30', 'D60', 'CU', 'CC', '1D inverted resistivity', 'Lab. Resistivity (Oa)', 
-            'Moisture content (%)', 'pH', 'Fine Soil (%)', 'Sand (%)']
-
-# Ensure all specified features are present in the data
-features = [f for f in features if f in data.columns]
-
-# Split the dataset into features (X) and target (y)
-X = data[features]
-y = data['Soil_Type']
-
-# Scale the features
-scaler = StandardScaler()
-X = scaler.fit_transform(X)
-
-# Split the data into training and testing sets
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-
-# Train a Random Forest classifier
-clf = RandomForestClassifier(n_estimators=100, random_state=42)
-clf.fit(X_train, y_train)
-
-# Make predictions on the test set
-y_pred = clf.predict(X_test)
-
-# # Evaluate the model
-# accuracy = accuracy_score(y_test, y_pred)
-# st.write(f"Model Accuracy: {accuracy}")
-
-# # Print the classification report
-# unique_test_labels = np.unique(y_test)
-# st.write("Classification Report:")
-# st.text(classification_report(y_test, y_pred, labels=unique_test_labels))
-
-# Save the model and scaler
-joblib.dump(clf, 'random_forest_model.pkl')
-joblib.dump(scaler, 'scaler.pkl')
-
-# Dictionary to map predicted class to soil type
-soil_type_mapping = {
-    1: "Inorganic Clay",
-    2: "Inorganic Silt",
-    3: "Poorly Graded Sand",
-    4: "Clayey Sand",
-    5: "Sandy",
-    6: "Well-graded Sand"
-}
-
-# Dictionary to map soil type to best crops
 crop_recommendations = {
     "Inorganic Clay": ["Rice", "Sugarcane"],
     "Inorganic Silt": ["Wheat", "Barley"],
@@ -90,43 +51,81 @@ crop_recommendations = {
     "Well-graded Sand": ["Lettuce", "Zucchini"]
 }
 
-# Function to load the model and scaler and make predictions based on user inputs
-def predict_soil_type(input_features):
-    # Load the model and scaler
-    clf = joblib.load('random_forest_model.pkl')
-    scaler = joblib.load('scaler.pkl')
+# =========================
+# LOAD DATA
+# =========================
+@st.cache_data
+def load_data():
+    df = pd.read_csv(DATA_FILE)
+    df.dropna(axis=1, how='all', inplace=True)
+    df.dropna(inplace=True)
+    return df
 
-    # Convert input_features to DataFrame to ensure correct format
-    input_features_df = pd.DataFrame([input_features])
-    
-    # Scale the input features
-    input_features_scaled = scaler.transform(input_features_df)
-    
-    # Make predictions
-    prediction = clf.predict(input_features_scaled)
-    
-    # Map prediction to soil type
-    predicted_soil_type = soil_type_mapping.get(prediction[0], "unrecognize")
-    
-    return predicted_soil_type
+# =========================
+# TRAIN MODEL ONCE
+# =========================
+@st.cache_resource
+def train_model():
+    df = load_data()
 
-# Streamlit UI for user input
+    if 'Soil_Type' not in df.columns:
+        raise ValueError("Column 'Soil_Type' not found in dataset.")
+
+    features = [f for f in EXPECTED_FEATURES if f in df.columns]
+    if not features:
+        raise ValueError("No expected feature columns were found in dataset.")
+
+    X = df[features].copy()
+    y = df['Soil_Type'].copy()
+
+    # Ensure numeric features
+    for col in features:
+        X[col] = pd.to_numeric(X[col], errors='coerce')
+
+    X.dropna(inplace=True)
+    y = y.loc[X.index]
+
+    # Encode target labels safely
+    label_encoder = LabelEncoder()
+    y_encoded = label_encoder.fit_transform(y)
+
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X_scaled, y_encoded, test_size=0.2, random_state=42, stratify=y_encoded
+    )
+
+    clf = RandomForestClassifier(n_estimators=100, random_state=42)
+    clf.fit(X_train, y_train)
+
+    y_pred = clf.predict(X_test)
+    acc = accuracy_score(y_test, y_pred)
+
+    return clf, scaler, label_encoder, features, df, acc
+
+# =========================
+# PREDICTION FUNCTION
+# =========================
+def predict_soil_type(input_features_dict, clf, scaler, label_encoder, features):
+    input_df = pd.DataFrame([input_features_dict])[features]
+    input_scaled = scaler.transform(input_df)
+    pred_encoded = clf.predict(input_scaled)[0]
+    pred_label = label_encoder.inverse_transform([pred_encoded])[0]
+    return pred_label
+
+# =========================
+# UI
+# =========================
 st.title("Soil Type Predictor")
 
-# Add custom CSS to change slider and pointer color
 st.markdown(
     """
     <style>
-    .stSlider > div > div > div > input[type=range]::-webkit-slider-runnable-track {
+    .stSlider > div > div > div > input[type="range"]::-webkit-slider-runnable-track {
         background: lightblue;
     }
-    .stSlider > div > div > div > input[type=range]::-webkit-slider-thumb {
-        background: lightblue;
-    }
-    .stSlider > div > div > div > input[type=range]::-moz-range-track {
-        background: lightblue;
-    }
-    .stSlider > div > div > div > input[type=range]::-moz-range-thumb {
+    .stSlider > div > div > div > input[type="range"]::-webkit-slider-thumb {
         background: lightblue;
     }
     </style>
@@ -134,18 +133,53 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-user_inputs = {}
-for feature in features:
-    value = float(data[feature].iloc[0])
-    min_value = float(data[feature].min())
-    max_value = float(data[feature].max())
-    user_inputs[feature] = st.slider(f"{feature} (e.g., {value})", min_value=min_value, max_value=max_value, value=value, key=feature)
+try:
+    clf, scaler, label_encoder, features, data, acc = train_model()
 
-if st.button("Predict"):
-    predicted_soil_type = predict_soil_type(user_inputs)
-    st.write(f"The predicted soil type is: {predicted_soil_type}")
-    
-    if predicted_soil_type in crop_recommendations:
-        st.write(f"Suggested crops for {predicted_soil_type}: {', '.join(crop_recommendations[predicted_soil_type])}")
-    else:
-        st.write("No crop recommendations available for this soil type.")
+    st.success(f"Model loaded successfully. Accuracy: {acc:.2%}")
+
+    user_inputs = {}
+    st.subheader("Enter Soil Parameters")
+
+    for feature in features:
+        col_data = pd.to_numeric(data[feature], errors='coerce').dropna()
+
+        min_value = float(col_data.min())
+        max_value = float(col_data.max())
+        default_value = float(col_data.iloc[0])
+
+        # avoid slider error if min == max
+        if min_value == max_value:
+            user_inputs[feature] = st.number_input(
+                f"{feature}",
+                value=default_value,
+                key=feature
+            )
+        else:
+            user_inputs[feature] = st.slider(
+                f"{feature} (e.g. {default_value})",
+                min_value=min_value,
+                max_value=max_value,
+                value=default_value,
+                key=feature
+            )
+
+    if st.button("Predict"):
+        predicted_soil_type = predict_soil_type(
+            user_inputs, clf, scaler, label_encoder, features
+        )
+
+        st.subheader("Prediction Result")
+        st.write(f"**Predicted Soil Type:** {predicted_soil_type}")
+
+        if predicted_soil_type in crop_recommendations:
+            st.write(
+                f"**Suggested crops:** {', '.join(crop_recommendations[predicted_soil_type])}"
+            )
+        else:
+            st.write("No crop recommendations available for this soil type.")
+
+except FileNotFoundError:
+    st.error(f"Data file '{DATA_FILE}' not found. Please upload/include it in the deployment folder.")
+except Exception as e:
+    st.error(f"App error: {e}")
